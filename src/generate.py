@@ -11,7 +11,7 @@ n_new = int(sys.argv[2]) if len(sys.argv) > 2 else 80
 temperature = 0.8
 top_k = 40
 
-ckpt = torch.load("checkpoints/ckpt.pt", map_location="cpu")
+ckpt = torch.load("checkpoints/best.pt", map_location="cpu")
 cfg = Config(**ckpt["cfg"])
 model = SLM(cfg)
 model.load_state_dict(ckpt["model"])
