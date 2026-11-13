@@ -1,0 +1,38 @@
+checkpoints/
+commands.txt
+logs/
+.venv/
+data/
+tokenizer/
+
+@"
+.venv/
+__pycache__/
+*.pyc
+
+# Model checkpoints and weights
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.onnx
+
+# Datasets
+data/raw/
+data/processed/
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+*.egg-info/
+dist/
+build/
