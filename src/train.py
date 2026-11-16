@@ -21,12 +21,17 @@ from model import Config, SLM
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument("--steps", type=int, default=3000)
+parser.add_argument("--steps", type=int, default=85000)
 parser.add_argument("--micro_bs", type=int, default=4)
 parser.add_argument("--accum", type=int, default=16)
 parser.add_argument("--seq", type=int, default=1024)
 parser.add_argument("--lr", type=float, default=6e-4)
-parser.add_argument("--eval_every", type=int, default=250)
+
+parser.add_argument("--eval_every", type=int, default=500)
+parser.add_argument("--save_every", type=int, default=500)
+parser.add_argument("--warmup_steps", type=int, default=500)
+
+parser.add_argument("--resume", type=str, default=None)
 
 args = parser.parse_args()
 
@@ -35,20 +40,35 @@ args = parser.parse_args()
 # 2. INITIALIZATION
 # ==========================================
 
+if not torch.cuda.is_available():
+    raise RuntimeError("CUDA is not available.")
+
 device = "cuda"
 
 torch.manual_seed(0)
+torch.cuda.manual_seed_all(0)
 
 rng = np.random.default_rng(0)
+val_rng = np.random.default_rng(1)
 
 os.makedirs("checkpoints", exist_ok=True)
 os.makedirs("logs", exist_ok=True)
 
 log_json = "logs/training.json"
+log_file = "logs/training.log"
 
-# Separate checkpoint and log every 250 steps.
-save_log_interval = 250
+tokens_per_step = (
+    args.micro_bs *
+    args.accum *
+    args.seq
+)
 
+total_tokens = tokens_per_step * args.steps
+
+
+# ==========================================
+# 3. TRAINING HISTORY AND LOGGING
+# ==========================================
 
 training_history = {
     "start_time": datetime.now().isoformat(),
@@ -60,62 +80,30 @@ training_history = {
         "seq": args.seq,
         "lr": args.lr,
         "eval_every": args.eval_every,
-        "save_log_interval": save_log_interval,
+        "save_every": args.save_every,
+        "warmup_steps": args.warmup_steps,
     },
 
     "metrics": []
 }
 
 
-# ==========================================
-# 3. LOGGING
-# ==========================================
-
 def save_metrics():
 
-    with open(log_json, "w", encoding="utf-8") as f:
-        json.dump(training_history, f, indent=4)
+    temp_path = log_json + ".tmp"
+
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump(training_history, f, indent=2)
+
+    os.replace(temp_path, log_json)
 
 
-def update_metric(step, **values):
+def write_log(message):
 
-    for metric in training_history["metrics"]:
-
-        if metric["step"] == step:
-
-            metric.update(values)
-
-            save_metrics()
-
-            return
-
-    metric = {
-        "step": step,
-        "train_loss": None,
-        "learning_rate": None,
-        "grad_norm": None,
-        "tokens_per_second": None,
-        "gpu_memory_gb": None,
-        "val_loss": None,
-    }
-
-    metric.update(values)
-
-    training_history["metrics"].append(metric)
-
-    save_metrics()
-
-
-def write_log(message, log_file):
-
-    print(message)
+    print(message, flush=True)
 
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(message + "\n")
-
-
-# Save initial history immediately.
-save_metrics()
 
 
 # ==========================================
@@ -143,25 +131,31 @@ val_data = np.memmap(
     mode="r"
 )
 
+if len(train_data) <= args.seq + 1:
+    raise ValueError("Training dataset is too small.")
+
+if len(val_data) <= args.seq + 1:
+    raise ValueError("Validation dataset is too small.")
+
 
 # ==========================================
 # 6. BATCH GENERATION
 # ==========================================
 
-def get_batch(data):
+def get_batch(data, batch_rng):
 
-    ix = rng.integers(
+    ix = batch_rng.integers(
         0,
         len(data) - args.seq - 1,
         size=args.micro_bs
     )
 
     x = np.stack([
-        data[i : i + args.seq] for i in ix
+        data[i:i + args.seq] for i in ix
     ]).astype(np.int64)
 
     y = np.stack([
-        data[i + 1 : i + 1 + args.seq] for i in ix
+        data[i + 1:i + 1 + args.seq] for i in ix
     ]).astype(np.int64)
 
     x = torch.from_numpy(x).to(device)
@@ -231,22 +225,29 @@ opt = torch.optim.AdamW(
 # 9. LEARNING RATE SCHEDULER
 # ==========================================
 
-warmup = max(1, args.steps // 20)
+warmup = max(1, min(args.warmup_steps, args.steps))
+
+min_lr_ratio = 0.1
 
 
 def get_lr(step):
 
+    # Warmup
     if step < warmup:
 
         return args.lr * (step + 1) / warmup
 
+    # Cosine decay
     progress = (
         (step - warmup) /
         max(1, args.steps - warmup)
     )
 
+    progress = min(1.0, max(0.0, progress))
+
     return args.lr * (
-        0.1 + 0.9 * 0.5 *
+        min_lr_ratio +
+        (1 - min_lr_ratio) * 0.5 *
         (1 + math.cos(math.pi * progress))
     )
 
@@ -256,15 +257,17 @@ def get_lr(step):
 # ==========================================
 
 @torch.no_grad()
-def evaluate(n_batches=20):
+def evaluate(n_batches=50):
 
     model.eval()
 
     total = 0.0
 
+    fixed_val_rng = np.random.default_rng(1)
+
     for _ in range(n_batches):
 
-        x, y = get_batch(val_data)
+        x, y = get_batch(val_data, fixed_val_rng)
 
         loss = compute_loss(x, y)
 
@@ -276,58 +279,178 @@ def evaluate(n_batches=20):
 
 
 # ==========================================
-# 11. CHECKPOINT SAVING
+# 11. CHECKPOINT STATE
 # ==========================================
 
-def save(step, val_loss):
+start_step = 0
 
-    checkpoint_path = (
-        f"checkpoints/ckpt_step_{step}.pt"
+best_val_loss = float("inf")
+
+last_val_loss = None
+
+
+# ==========================================
+# 12. CHECKPOINT SAVING
+# ==========================================
+
+def save_checkpoint(path, step):
+
+    torch.cuda.synchronize()
+
+    checkpoint = {
+
+        # Model
+        "model": model.state_dict(),
+
+        # Optimizer
+        "optimizer": opt.state_dict(),
+
+        # Configuration
+        "cfg": asdict(cfg),
+
+        # Training progress
+        "step": step,
+
+        # Validation
+        "val_loss": last_val_loss,
+        "best_val_loss": best_val_loss,
+
+        # Random states
+        "train_rng_state": rng.bit_generator.state,
+        "val_rng_state": val_rng.bit_generator.state,
+
+        "torch_rng_state": torch.get_rng_state(),
+        "cuda_rng_state": torch.cuda.get_rng_state_all(),
+
+        # Training history
+        "training_history": training_history,
+    }
+
+    temp_path = path + ".tmp"
+
+    # Write temporary checkpoint first.
+    torch.save(checkpoint, temp_path)
+
+    # Replace previous checkpoint.
+    os.replace(temp_path, path)
+
+    write_log(f"Checkpoint saved: {path}")
+
+
+# ==========================================
+# 13. RESUME TRAINING
+# ==========================================
+
+if args.resume is not None:
+
+    write_log(f"Loading checkpoint: {args.resume}")
+
+    checkpoint = torch.load(
+        args.resume,
+        map_location=device,
+        weights_only=False
     )
 
-    torch.save(
-        {
-            "model": model.state_dict(),
-            "cfg": asdict(cfg),
-            "step": step,
-            "val_loss": val_loss,
-        },
+    required_keys = [
+        "model",
+        "optimizer",
+        "step",
+        "train_rng_state",
+        "val_rng_state",
+        "torch_rng_state",
+        "cuda_rng_state",
+    ]
 
-        checkpoint_path
+    missing_keys = [
+        key for key in required_keys
+        if key not in checkpoint
+    ]
+
+    if missing_keys:
+        raise RuntimeError(
+            f"Checkpoint cannot resume training. "
+            f"Missing: {missing_keys}"
+        )
+
+    model.load_state_dict(checkpoint["model"])
+
+    opt.load_state_dict(checkpoint["optimizer"])
+
+    start_step = checkpoint["step"]
+
+    best_val_loss = checkpoint.get(
+        "best_val_loss",
+        float("inf")
     )
 
-    print(f"Checkpoint saved: {checkpoint_path}")
+    last_val_loss = checkpoint.get("val_loss")
+
+    rng.bit_generator.state = checkpoint["train_rng_state"]
+
+    val_rng.bit_generator.state = checkpoint["val_rng_state"]
+
+    torch.set_rng_state(
+        checkpoint["torch_rng_state"].cpu()
+    )
+
+    torch.cuda.set_rng_state_all(
+        [
+            state.cpu()
+            for state in checkpoint["cuda_rng_state"]
+        ]
+    )
+
+    training_history = checkpoint.get(
+        "training_history",
+        training_history
+    )
+
+    write_log(f"Resuming from step {start_step}")
+
+    if start_step >= args.steps:
+        raise ValueError(
+            "Checkpoint has already reached the requested "
+            "training step count."
+        )
 
 
 # ==========================================
-# 12. TRAINING INFORMATION
+# 14. TRAINING INFORMATION
 # ==========================================
 
-tokens_per_step = (
-    args.micro_bs *
-    args.accum *
-    args.seq
-)
+print("\n========== TRAINING CONFIGURATION ==========")
 
-total_tokens = tokens_per_step * args.steps
+print(f"Total training steps: {args.steps:,}")
+print(f"Starting step: {start_step:,}")
 
-print(
-    f"tokens per step: {tokens_per_step:,} | "
-    f"total tokens: {total_tokens:,}"
-)
+print(f"Tokens per step: {tokens_per_step:,}")
+print(f"Planned total tokens: {total_tokens:,}")
+
+print(f"Learning rate: {args.lr}")
+print(f"Warmup steps: {warmup}")
+
+print(f"Validation interval: {args.eval_every}")
+print(f"Checkpoint interval: {args.save_every}")
+
+print("============================================\n")
 
 
 # ==========================================
-# 13. TRAINING LOOP
+# 15. TRAINING LOOP
 # ==========================================
 
 model.train()
 
+torch.cuda.reset_peak_memory_stats()
+
 t0 = time.time()
 
-for step in range(args.steps):
+for step in range(start_step, args.steps):
 
-    # Current learning rate
+    # --------------------------------------
+    # Learning rate
+    # --------------------------------------
+
     lr = get_lr(step)
 
     for group in opt.param_groups:
@@ -338,21 +461,23 @@ for step in range(args.steps):
     # Gradient accumulation
     # --------------------------------------
 
+    opt.zero_grad(set_to_none=True)
+
     step_loss = 0.0
 
     for _ in range(args.accum):
 
-        x, y = get_batch(train_data)
+        x, y = get_batch(train_data, rng)
 
         loss = compute_loss(x, y) / args.accum
 
         loss.backward()
 
-        step_loss += loss.item()
+        step_loss += loss.detach()
 
 
     # --------------------------------------
-    # Gradient clipping and optimizer update
+    # Gradient clipping
     # --------------------------------------
 
     grad_norm = torch.nn.utils.clip_grad_norm_(
@@ -360,10 +485,12 @@ for step in range(args.steps):
         1.0
     )
 
+
+    # --------------------------------------
+    # Optimizer update
+    # --------------------------------------
+
     opt.step()
-
-    opt.zero_grad(set_to_none=True)
-
 
     global_step = step + 1
 
@@ -374,15 +501,18 @@ for step in range(args.steps):
 
     should_log = (
         global_step % 10 == 0
-        or global_step % save_log_interval == 0
         or global_step == args.steps
     )
 
     if should_log:
 
+        elapsed = time.time() - t0
+
+        completed_steps = global_step - start_step
+
         speed = (
-            tokens_per_step * global_step /
-            (time.time() - t0)
+            tokens_per_step * completed_steps /
+            max(elapsed, 1e-8)
         )
 
         mem = (
@@ -390,99 +520,126 @@ for step in range(args.steps):
             1e9
         )
 
+        train_loss = step_loss.item()
+
+        grad_value = grad_norm.item()
+
         message = (
-            f"step {global_step:5d} | "
-            f"loss {step_loss:.4f} | "
+            f"step {global_step:6d} | "
+            f"loss {train_loss:.4f} | "
             f"lr {lr:.2e} | "
-            f"grad {grad_norm.item():.2f} | "
+            f"grad {grad_value:.2f} | "
             f"{speed:,.0f} tok/s | "
             f"{mem:.2f} GB"
         )
 
-        print(message)
+        write_log(message)
 
-        update_metric(
-            global_step,
+        training_history["metrics"].append({
 
-            train_loss=step_loss,
+            "step": global_step,
 
-            learning_rate=lr,
+            "train_loss": train_loss,
 
-            grad_norm=grad_norm.item(),
+            "learning_rate": lr,
 
-            tokens_per_second=speed,
+            "grad_norm": grad_value,
 
-            gpu_memory_gb=mem
-        )
+            "tokens_per_second": speed,
+
+            "gpu_memory_gb": mem,
+
+            "val_loss": None,
+        })
 
 
     # --------------------------------------
-    # Validation and checkpoint saving
+    # Validation
     # --------------------------------------
 
-    if (
-        global_step % save_log_interval == 0
+    should_evaluate = (
+        global_step % args.eval_every == 0
         or global_step == args.steps
-    ):
+    )
 
-        val_loss = evaluate()
+    if should_evaluate:
+
+        last_val_loss = evaluate()
 
         message = (
             f">>> step {global_step} | "
-            f"val loss {val_loss:.4f}"
+            f"validation loss {last_val_loss:.4f}"
         )
 
-        print(message)
+        write_log(message)
 
-        # Save separate checkpoint.
-        save(global_step, val_loss)
+        # Update validation metric.
+        if (
+            training_history["metrics"]
+            and training_history["metrics"][-1]["step"] == global_step
+        ):
 
-        # Save separate log file.
-        log_file = (
-            f"logs/training_step_{global_step}.log"
-        )
+            training_history["metrics"][-1]["val_loss"] = last_val_loss
 
-        with open(log_file, "w", encoding="utf-8") as f:
 
-            f.write(
-                f"Training completed up to step {global_step}\n"
+        # ----------------------------------
+        # Save BEST checkpoint
+        # ----------------------------------
+
+        if last_val_loss < best_val_loss:
+
+            best_val_loss = last_val_loss
+
+            save_checkpoint(
+                "checkpoints/best.pt",
+                global_step
             )
 
-            f.write(
-                f"Validation loss: {val_loss:.4f}\n\n"
+            write_log(
+                f"New best validation loss: {best_val_loss:.4f}"
             )
 
-            f.write("Training metrics:\n")
 
-            for metric in training_history["metrics"]:
+    # --------------------------------------
+    # Save LATEST checkpoint
+    # --------------------------------------
 
-                if metric["step"] <= global_step:
+    should_save = (
+        global_step % args.save_every == 0
+        or global_step == args.steps
+    )
 
-                    f.write(
-                        json.dumps(metric, indent=4) + "\n"
-                    )
+    if should_save:
 
-        print(f"Log saved: {log_file}")
-
-        # Record validation loss in overall JSON.
-        update_metric(
-            global_step,
-            val_loss=val_loss
+        save_checkpoint(
+            "checkpoints/latest.pt",
+            global_step
         )
+
+
+    # --------------------------------------
+    # Save metrics
+    # --------------------------------------
+
+    if should_evaluate or should_save:
+
+        save_metrics()
 
 
 # ==========================================
-# 14. TRAINING COMPLETE
+# 16. TRAINING COMPLETE
 # ==========================================
 
 training_history["end_time"] = datetime.now().isoformat()
 
 save_metrics()
 
-print("\nTraining completed successfully.")
+write_log("\nTraining completed successfully.")
 
-print("Checkpoints saved in: checkpoints/")
+write_log("Latest checkpoint: checkpoints/latest.pt")
 
-print("Training logs saved in: logs/")
+write_log("Best checkpoint: checkpoints/best.pt")
 
-print("Overall metrics saved: logs/training.json")
+write_log("Training log: logs/training.log")
+
+write_log("Training metrics: logs/training.json")

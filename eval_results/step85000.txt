@@ -1,0 +1,60 @@
+[step85000] step 85000 | fixed val loss: 2.9367 (perplexity 18.85, 819,200 tokens)
+
+### 'The capital of Pakistan is'
+The capital of Pakistan is Karachi. The capital city of Pakistan is Jammu and the capital city of Kashmir is Lucknow.
+Until recently, Pakistan’s economy was dominated by a combination of Western-style, liberalized-style manufacturing, multiculturalism, and internationalization. The economic relationship between the two countries has been largely stable
+
+### 'Photosynthesis is the process by which'
+Photosynthesis is the process by which plants absorb light energy from the sun. The photosynthetic process can take place in two forms:
+- Cells with a high carbon content and high availability of oxygen: these are used to store energy as glucose or energy storage units called starches (plant-based carbohydrates). These starches have a higher energy content than the glucose,
+
+### 'Machine learning is'
+Machine learning is a field of study that deals with the thought processes that lead to knowledge and its use in the study of science and technology.
+The specific aim of machine learning is to identify patterns in small data sets and develop models that can predict future changes in data.
+Fundamental concepts and concepts of machine learning include:
+- The process of learning from
+
+### 'Water boils at a temperature of'
+Water boils at a temperature of over 100°F. This is the temperature that causes the formation of water gushes and the first step in the oxidation of the water itself. Water then condenses into gush as it evaporates, but it’s only slightly lighter than water. This phenomenon is known as a water boiling point (or Cooling Point).
+Water
+
+### 'In 1947, the subcontinent'
+In 1947, the subcontinent’s first multipurpose hotel was opened. The premises were designed in such a way that it would serve all hotels and is equipped with modern machinery, including 2-way elevators for long periods, including one-way elevator from the railway station to the Malda Hotel in Coimbatore. The hotel was built
+
+### '2+2='
+2+2=0.012
+- To take a 'net' to a given range, use 'r',
+- To return to the list of the points that the 'throw' should be,
+- To return to a point which is an unlimited length, or
+- To return to a point which has an infinite number of points.
+
+### '12 + 30 ='
+12 + 30 = 36
+12 + 30 = 50
+Let’s talk about the first four numbers and the missing number,
+(+) = 2
+= 12 + 36 = 3
+We have the answer:
+1 + 32 + 38 = 9
+So the third number,
+12 = 29.5 = 7.3
+What is the correct
+
+### 'Question: What is the capital of France?\nAnswer:'
+Question: What is the capital of France?
+Answer: The capital of France is the state of Parliaire (Paris). The French state capital, Paris, is an imperial capital. Its capital, Paris, is the capital of the French Confederation. The French people have their own capital, Paris, and the whole of France is a state capital.
+There is no official capital in France
+
+### 'User: find a red ball\nAssistant:'
+User: find a red ball
+Assistant: Research and development
+Speaker: University of Illinois
+Audience: Children (age 2 to 7)
+Brand: Nebraska Museum of Science & Technology
+Random Access: 50
+Gifts: $20 or $50 for a member
+Membership Required: 6 euros for each member
+
+### 'Once upon a time, a small robot'
+Once upon a time, a small robot that could do all the things we love has been built by engineers at NASA and managed to get through the entire solar system. The robot can even complete some of the tasks needed to perform on-orbit solar-orbit operations on other planets.
+Some robots are capable of making the job impossible for us, like a robotic arm that can
