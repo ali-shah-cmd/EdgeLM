@@ -1,0 +1,36 @@
+{
+  "yours (step 85000)": {
+    "hellaswag": {
+      "n": 1000,
+      "acc": 0.27,
+      "acc_norm": 0.304
+    },
+    "arc_easy": {
+      "n": 1000,
+      "acc": 0.482,
+      "acc_norm": 0.421
+    },
+    "arc_challenge": {
+      "n": 1000,
+      "acc": 0.215,
+      "acc_norm": 0.268
+    }
+  },
+  "HuggingFaceTB/SmolLM2-135M": {
+    "hellaswag": {
+      "n": 1000,
+      "acc": 0.341,
+      "acc_norm": 0.443
+    },
+    "arc_easy": {
+      "n": 1000,
+      "acc": 0.634,
+      "acc_norm": 0.555
+    },
+    "arc_challenge": {
+      "n": 1000,
+      "acc": 0.285,
+      "acc_norm": 0.295
+    }
+  }
+}
