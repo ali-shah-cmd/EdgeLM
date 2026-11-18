@@ -4,6 +4,8 @@ logs/
 .venv/
 data/
 tokenizer/
+eval_results/
+eval_data/
 
 @"
 .venv/

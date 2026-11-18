@@ -6,17 +6,17 @@ from dataclasses import dataclass
 
 @dataclass
 class Config:
-    vocab_size: int = 16384
-    d_model: int = 512
-    n_layers: int = 20
-    n_heads: int = 8
-    n_kv_heads: int = 2
-    head_dim: int = 64
-    ffn_dim: int = 1408
-    ple_dim: int = 32
-    max_seq: int = 2048
-    rope_theta: float = 10000.0
-    norm_eps: float = 1e-6
+    vocab_size: int = 16384 # number of tokens tokenizer know
+    d_model: int = 512 # size of token representation
+    n_layers: int = 20 # number of transformer blocks
+    n_heads: int = 8 # Query attention heads
+    n_kv_heads: int = 2 # Key/Value attention heads
+    head_dim: int = 64 # Attention head dimension d_model = n_heads * head_dim => 8 * 64 = 512
+    ffn_dim: int = 1408 # Fead Forward Network dimension
+    ple_dim: int = 32 # Size of PLE representation
+    max_seq: int = 2048 # max supported sequence length
+    rope_theta: float = 10000.0 # RoPE frequency
+    norm_eps: float = 1e-6 # numerical stability constant (prevent division by zero)
 
 class RMSNorm(nn.Module):
     def __init__(self, dim, eps=1e-6):

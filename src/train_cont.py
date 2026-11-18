@@ -38,6 +38,9 @@ parser.add_argument("--init", type=str, default="checkpoints/base_final.pt",
 parser.add_argument("--unseen", type=str, default="data/tokenized/unseen_blocks.npy",
                     help="Blocks never seen in pretraining (from find_unseen.py), or 'none'.")
 parser.add_argument("--seed", type=int, default=1)
+parser.add_argument("--fill_seen", action="store_true",
+                    help="After the unseen blocks run out, continue through the blocks "
+                         "the model saw before (for runs longer than the unseen data).")
 parser.add_argument("--tag", type=str, default="cont",
                     help="Name used for checkpoints and logs, so base files are never overwritten.")
 
@@ -101,6 +104,7 @@ training_history = {
         "init": args.init,
         "unseen": args.unseen,
         "seed": args.seed,
+        "fill_seen": args.fill_seen,
         "tag": args.tag,
     },
 
@@ -172,14 +176,27 @@ if args.unseen.lower() != "none":
 
     unseen_blocks = np.load(args.unseen)
 
-    order = np.random.default_rng(args.seed).permutation(unseen_blocks)
+    order_rng = np.random.default_rng(args.seed)
+
+    # Fresh text first, in shuffled order.
+    order = order_rng.permutation(unseen_blocks)
+
+    if args.fill_seen:
+
+        # Every block that has room for a full window plus its target token.
+        n_usable = (len(train_data) - 1) // args.seq
+
+        seen_blocks = np.setdiff1d(np.arange(n_usable), unseen_blocks)
+
+        # Then the blocks the model has already seen once, also shuffled.
+        order = np.concatenate([order, order_rng.permutation(seen_blocks)])
 
     needed = args.steps * args.accum * args.micro_bs
 
     if needed > len(order):
         raise ValueError(
-            f"Need {needed:,} blocks but only {len(order):,} unseen blocks exist. "
-            f"Lower --steps."
+            f"Need {needed:,} blocks but only {len(order):,} are available. "
+            f"Lower --steps or add --fill_seen."
         )
 
 elif args.seed == 0:
@@ -529,7 +546,8 @@ print(f"Tokens per step: {tokens_per_step:,}")
 print(f"Planned total tokens: {total_tokens:,}")
 
 if order is not None:
-    print(f"Unseen blocks available: {len(order):,}")
+    print(f"Unseen blocks: {len(unseen_blocks):,}")
+    print(f"Blocks available (fill_seen={args.fill_seen}): {len(order):,}")
     print(f"Blocks this run will use: {args.steps * args.accum * args.micro_bs:,}")
 else:
     print("Sampling: random windows (some text may repeat)")
