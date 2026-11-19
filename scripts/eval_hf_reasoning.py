@@ -105,4 +105,20 @@ with out_path.open("w", encoding="utf-8") as f:
     for r in results:
         f.write(json.dumps(r, ensure_ascii=False) + "\n")
 
+    # Final line: run summary (marked with "type": "summary" so loaders can skip it).
+    summary = {
+        "type": "summary",
+        "settings": vars(args),
+        "overall": {
+            "correct": all_c,
+            "total": all_n,
+            "accuracy": 100 * all_c / all_n,
+        },
+        "categories": {
+            cat: {"correct": c, "total": n, "accuracy": 100 * c / n}
+            for cat, (c, n) in totals.items()
+        },
+    }
+    f.write(json.dumps(summary, ensure_ascii=False) + "\n")
+
 print(f"Saved to: {out_path}")

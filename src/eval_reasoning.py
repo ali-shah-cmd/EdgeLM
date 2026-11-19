@@ -295,6 +295,22 @@ def main():
         for result in results:
             f.write(json.dumps(result, ensure_ascii=False) + "\n")
 
+        # Final line: run summary (marked with "type": "summary" so loaders can skip it).
+        summary = {
+            "type": "summary",
+            "settings": vars(args),
+            "step": step,
+            "overall": {
+                "correct": overall_correct,
+                "total": overall_total,
+                "accuracy": overall_accuracy,
+            },
+            "categories": {cat: dict(v) for cat, v in totals.items()},
+            "subcategories": {f"{c}/{s}": dict(v) for (c, s), v in sub_totals.items()},
+            "yes_balance": {f"{c}/{s}": dict(v) for (c, s), v in yes_stats.items()},
+        }
+        f.write(json.dumps(summary, ensure_ascii=False) + "\n")
+
     print(f"\nDetailed predictions saved to: {output_path}")
 
 
