@@ -8,7 +8,7 @@ import torch
 from model import Config, SLM
 
 
-CHECKPOINT = "checkpoints/ckpt.pt"
+CHECKPOINT = "checkpoints/reasoning_cont_latest.pt"
 
 PREFILL_LENGTHS = [32, 128, 512, 1024]
 GENERATION_TOKENS = 50

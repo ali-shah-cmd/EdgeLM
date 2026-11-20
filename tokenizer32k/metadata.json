@@ -1,0 +1,21 @@
+{
+    "vocab_size": 32768,
+    "special_tokens": {
+        "<pad>": 0,
+        "<bos>": 1,
+        "<eos>": 2,
+        "<think>": 3,
+        "</think>": 4
+    },
+    "algorithm": "ByteLevel BPE",
+    "digit_splitting": true,
+    "max_doc_chars": 100000,
+    "train_files": [
+        "data/train-00846-of-00849.parquet",
+        "data/train-00847-of-00849.parquet"
+    ],
+    "train_docs": 145710,
+    "train_chars": 600000990,
+    "chars_per_token": 4.2,
+    "training_time_minutes": 3.03
+}
